@@ -1,47 +1,32 @@
-var feed
-var program = require('commander')
-program
-  .usage('[options] <feed>')
-  .option('-i, --interval <path>', 'Update interval')
-  .option('-e, --env <path>', 'Environment vars path')
-  .action(f => feed = f)
-  .parse(process.argv)
+'use strict';
 
-require('dotenv').config(program.env && {path: program.env})
+var opts = require('./lib/command')
+opts.parse(process.argv)
+require('dotenv').config(opts.env && {path: opts.env})
 
-var _ = require('lodash')
-var Watcher = require('rss-watcher')
+var logErrors = require('./lib/logErrors')
+var articleForTweet = require('./lib/articleForTweet')
 var Twit = require('twit')
+var Watcher = require('rss-watcher')
 
 var T = new Twit({
-  consumer_key:         process.env.CONSUMER_KEY,
-  consumer_secret:      process.env.CONSUMER_SECRET,
-  access_token:         process.env.ACCESS_TOKEN,
-  access_token_secret:  process.env.ACCESS_TOKEN_SECRET
+  consumer_key: process.env.CONSUMER_KEY,
+  consumer_secret: process.env.CONSUMER_SECRET,
+  access_token: process.env.ACCESS_TOKEN,
+  access_token_secret: process.env.ACCESS_TOKEN_SECRET
 })
 
-var watcher = new Watcher(feed)
-watcher.set({ interval: program.interval || process.env.UPDATE_INTERVAL || 60 })
-watcher.on('new article', tweetArticle)
-watcher.run(logErrors)
-
-function tweetArticle(article) {
-  var clean = shapeArticleData(article)
-  var status = `${clean.title} ${clean.link}`
-  console.log(`tweeting '${status}'`)
+var watcher = new Watcher(opts.feed)
+var interval = opts.interval || process.env.UPDATE_INTERVAL || 60
+var watcherOpts = {
+  interval
+}
+watcher.set(watcherOpts)
+watcher.on('new article', function(article) {
+  var status = articleForTweet(article)
+  console.info(`tweeting '${status}'`)
   T.post('statuses/update', { status }, logErrors)
-}
+})
 
-function shapeArticleData(article) {
-  var cleanedArticle = _.pick(article, 'title', 'link')
-  if (cleanedArticle.title.length > 116) {
-    cleanedArticle.title = cleanedArticle.title.substring(0, 113) + '...'
-  }
-
-  return cleanedArticle
-}
-
-function logErrors(err) {
-  if (err) console.error(err)
-}
-
+console.log(`tweeting posts on ${opts.feed} with options:`, watcherOpts)
+watcher.run(logErrors)
